@@ -1,0 +1,46 @@
+#!/bin/sh
+set -eu
+
+# Keep this as a shell exec shim. A Node/JS proxy adds large startup overhead for
+# this terminal-heavy CLI, especially on hot paths like prompt integration.
+
+case "$(uname -s 2>/dev/null)-$(uname -m 2>/dev/null)" in
+  Darwin-arm64 | Darwin-aarch64)
+    binary="hitch-darwin-arm64"
+    ;;
+  Darwin-x86_64 | Darwin-amd64)
+    binary="hitch-darwin-x64"
+    ;;
+  Linux-arm64 | Linux-aarch64)
+    binary="hitch-linux-arm64"
+    ;;
+  Linux-x86_64 | Linux-amd64)
+    binary="hitch-linux-x64"
+    ;;
+  *)
+    echo "hitch does not include a binary for $(uname -s 2>/dev/null)-$(uname -m 2>/dev/null)" >&2
+    exit 1
+    ;;
+esac
+
+# Bun and --ignore-scripts installs leave this shell shim in place instead of
+# replacing it with the native binary. Global package managers usually expose
+# bin entries through symlinks, so $0 can point at ~/.bun/bin/hitch or similar.
+# Resolve symlinks first or ../native will be looked up next to the global shim.
+target="$0"
+while [ -L "$target" ]; do
+  link="$(readlink "$target")"
+  case "$link" in
+    /*) target="$link" ;;
+    *) target="$(CDPATH= cd "$(dirname "$target")" && pwd)/$link" ;;
+  esac
+done
+script_dir="$(CDPATH= cd "$(dirname "$target")" && pwd)"
+native="$script_dir/../native/$binary"
+
+if [ ! -x "$native" ]; then
+  echo "hitch native binary was not installed correctly. Try reinstalling hitch-cli." >&2
+  exit 1
+fi
+
+exec "$native" "$@"
